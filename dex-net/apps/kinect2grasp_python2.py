@@ -75,6 +75,12 @@ else:
 
 
 def remove_table_points(points_voxel_, vis=False):
+    """
+    移除平面
+    :param points_voxel_: 体素栅格下采样之后的点云
+    :param vis:
+    :return: 移除平面之后的点云
+    """
     xy_unique = np.unique(points_voxel_[:, 0:2], axis=0)
     new_points_voxel_ = points_voxel_
     pre_del = np.zeros([1])
@@ -124,6 +130,12 @@ def remove_white_pixel(msg, points_, vis=False):
 
 
 def get_voxel_fun(points_, n):
+    """
+    体素栅格下采样
+    :param points_: 点云中的点序列
+    :param n: 体素大小
+    :return: 降采样之后的点
+    """
     get_voxel = voxelgrid.VoxelGrid(points_, n_x=n, n_y=n, n_z=n)
     get_voxel.compute()
     points_voxel_ = get_voxel.voxel_centers[get_voxel.voxel_n]
@@ -132,6 +144,12 @@ def get_voxel_fun(points_, n):
 
 
 def cal_grasp(msg, cam_pos_):
+    """
+    抓取姿态生成
+    :param msg: ROS点云消息
+    :param cam_pos_: 摄像头姿态
+    :return:
+    """
     points_ = pointclouds.pointcloud2_to_xyz_array(msg)
     points_ = points_.astype(np.float32)
     remove_white = False
@@ -140,10 +158,11 @@ def cal_grasp(msg, cam_pos_):
     # begin voxel points
     n = n_voxel  # parameter related to voxel method
     # gpg improvements, highlights: flexible n parameter for voxelizing.
-    points_[:, 0] = points_[:, 0] + 0.025  # liang: as the kinect2 is not well colibrated, here is a work around
-    points_[:, 2] = points_[:, 2] #+ 0.018  # liang: as the kinect2 is not well colibrated, here is a work around
+    points_[:, 0] = points_[:, 0] + 0.025  # liang: as the kinect2 is not well calibrated, here is a work around
+    points_[:, 2] = points_[:, 2]  # + 0.018  # liang: as the kinect2 is not well calibrated, here is a work around
 
-    points_voxel_ = get_voxel_fun(points_, n)
+    points_voxel_ = get_voxel_fun(points_, n)  # point cloud down sample
+    # 点数过少, 调整降采样参数
     if len(points_) < 2000:  # should be a parameter
         while len(points_voxel_) < len(points_)-15:
             points_voxel_ = get_voxel_fun(points_, n)
@@ -151,16 +170,18 @@ def cal_grasp(msg, cam_pos_):
             rospy.loginfo("the voxel has {} points, we want get {} points".format(len(points_voxel_), len(points_)))
 
     rospy.loginfo("the voxel has {} points, we want get {} points".format(len(points_voxel_), len(points_)))
-    points_ = points_voxel_
+    points_ = points_voxel_  # 降采样之后的点云
     remove_points = False
     if remove_points:
         points_ = remove_table_points(points_, vis=True)
-    point_cloud = pcl.PointCloud(points_)
+    point_cloud = pcl.PointCloud(points_)  # 传入pcl处理
+    # 计算表面法线
     norm = point_cloud.make_NormalEstimation()
     norm.set_KSearch(30)  # critical parameter when calculating the norms
     normals = norm.compute()
     surface_normal = normals.to_array()
     surface_normal = surface_normal[:, 0:3]
+    # 处理法线方向
     vector_p2cam = cam_pos_ - points_
     vector_p2cam = vector_p2cam / np.linalg.norm(vector_p2cam, axis=1).reshape(-1, 1)
     tmp = np.dot(vector_p2cam, surface_normal.T).diagonal()
@@ -173,7 +194,7 @@ def cal_grasp(msg, cam_pos_):
     #  modify of gpg: make it as a parameter. avoid select points near the table.
     points_for_sample = points_[np.where(points_[:, 2] > select_point_above_table)[0]]
     if len(points_for_sample) == 0:
-        rospy.loginfo("Can not seltect point, maybe the point cloud is too low?")
+        rospy.loginfo("Can not select point, maybe the point cloud is too low?")
         return [], points_, surface_normal
     yaml_config['metrics']['robust_ferrari_canny']['friction_coef'] = value_fc
     if not using_mp:
@@ -204,6 +225,17 @@ def cal_grasp(msg, cam_pos_):
 
 def check_collision_square(grasp_bottom_center, approach_normal, binormal,
                            minor_pc, points_, p, way="p_open"):
+    """
+    碰撞检测
+    :param grasp_bottom_center:
+    :param approach_normal:
+    :param binormal:
+    :param minor_pc:
+    :param points_:
+    :param p:
+    :param way:
+    :return:
+    """
     approach_normal = approach_normal.reshape(1, 3)
     approach_normal = approach_normal / np.linalg.norm(approach_normal)
     binormal = binormal.reshape(1, 3)
@@ -274,7 +306,11 @@ def check_collision_square(grasp_bottom_center, approach_normal, binormal,
 
 def collect_pc(grasp_, pc):
     """
+    获取手抓坐标系下的点云
     grasp_bottom_center, normal, major_pc, minor_pc
+    :param grasp_:
+    :param pc:
+    :return:
     """
     grasp_num = len(grasp_)
     grasp_ = np.array(grasp_)
@@ -296,6 +332,15 @@ def collect_pc(grasp_, pc):
 
 
 def show_marker(marker_array_, pos_, ori_, scale_, color_, lifetime_):
+    """
+    rviz中显示桌面
+    :param marker_array_:
+    :param pos_:
+    :param ori_:
+    :param scale_:
+    :param color_:
+    :param lifetime_:
+    """
     marker_ = Marker()
     marker_.header.frame_id = "/table_top"
     # marker_.header.stamp = rospy.Time.now()
@@ -324,7 +369,7 @@ def show_marker(marker_array_, pos_, ori_, scale_, color_, lifetime_):
 
 def show_grasp_marker(marker_array_, real_grasp_, gripper_, color_, lifetime_):
     """
-    show grasp using marker
+    rviz中显示抓取姿态
     :param marker_array_: marker array
     :param real_grasp_: [0] position, [1] approach [2] binormal [3] minor pc
     :param gripper_: gripper parameter of a grasp
@@ -373,6 +418,12 @@ def check_hand_points_fun(real_grasp_):
 
 
 def get_grasp_msg(real_good_grasp_, score_value_):
+    """
+    获取抓取姿态消息
+    :param real_good_grasp_:
+    :param score_value_:
+    :return:
+    """
     grasp_bottom_center_modify = real_good_grasp_[4]
     approach = real_good_grasp_[1]
     binormal = real_good_grasp_[2]
@@ -463,28 +514,28 @@ if __name__ == '__main__':
         else:
             rospy.loginfo("Robot is at home, safely catching point cloud data.")
             if single_obj_testing:
-                input("Pleas put object on table and press any number to continue!")
+                input("Please put object on table and press any number to continue!")
         rospy.loginfo("rospy is waiting for message: /table_top_points")
         kinect_data = rospy.wait_for_message("/table_top_points", PointCloud2)
         real_good_grasp = []
         real_bad_grasp = []
         real_score_value = []
 
-        repeat = 1  # speed up this try 10 time is too time consuming
+        repeat = 1  # speed up this try 10 time is too time consuming  同一姿态重复预测的次数
 
         # begin of grasp detection
         # if there is no point cloud on table, waiting for point cloud.
         if kinect_data.data == '':
             rospy.loginfo("There is no points on the table, waiting...")
             continue
-        real_grasp, points, normals_cal = cal_grasp(kinect_data, cam_pos)
-        if tray_grasp:
-            real_grasp = remove_grasp_outside_tray(real_grasp, points)
+        real_grasp, points, normals_cal = cal_grasp(kinect_data, cam_pos)  # 获取抓取姿态
+        if tray_grasp:  # 在托盘中抓取
+            real_grasp = remove_grasp_outside_tray(real_grasp, points)  # 移除托盘外的抓取姿态
 
         check_grasp_points_num = True  # evaluate the number of points in a grasp
         check_hand_points_fun(real_grasp) if check_grasp_points_num else 0
 
-        in_ind, in_ind_points = collect_pc(real_grasp, points)
+        in_ind, in_ind_points = collect_pc(real_grasp, points)  # 计算手抓坐标下的点云坐标
         if save_grasp_related_file:
             np.save("./generated_grasps/points.npy", points)
             np.save("./generated_grasps/in_ind.npy", in_ind)
@@ -492,8 +543,8 @@ if __name__ == '__main__':
             np.save("./generated_grasps/cal_norm.npy", normals_cal)
         score = []  # should be 0 or 1
         score_value = []  # should be float [0, 1]
-        ind_good_grasp = []
-        ind_bad_grasp = []
+        ind_good_grasp = []  # 用于记录好的抓取姿态
+        ind_bad_grasp = []  # 用于记录差的抓取姿态
         rospy.loginfo("Begin send grasp into pointnet, cal grasp score")
         for ii in range(len(in_ind_points)):
             if rospy.get_param("/robot_at_home") == "false":
@@ -503,28 +554,28 @@ if __name__ == '__main__':
             if not robot_at_home:
                 rospy.loginfo("robot is not at home, stop calculating the grasp score")
                 break
-            if in_ind_points[ii].shape[0] < minimal_points_send_to_point_net:
+            if in_ind_points[ii].shape[0] < minimal_points_send_to_point_net:  # 点数太少
                 rospy.loginfo("Mark as bad grasp! Only {} points, should be at least {} points.".format(
                               in_ind_points[ii].shape[0], minimal_points_send_to_point_net))
                 score.append(0)
                 score_value.append(0.0)
                 if show_bad_grasp:
                     ind_bad_grasp.append(ii)
-            else:
+            else:  # 使用 pointnet 判断抓取质量
                 predict = []
                 grasp_score = []
                 for _ in range(repeat):
-                    if len(in_ind_points[ii]) >= input_points_num:
+                    if len(in_ind_points[ii]) >= input_points_num:  # 点数太多, 降采样, 随机数不可重复
                         points_modify = in_ind_points[ii][np.random.choice(len(in_ind_points[ii]),
                                                                            input_points_num, replace=False)]
-                    else:
+                    else:                                           # 点数不够, 上采样, 随机数可重复
                         points_modify = in_ind_points[ii][np.random.choice(len(in_ind_points[ii]),
                                                                            input_points_num, replace=True)]
-                    if_good_grasp, grasp_score_tmp = test_network(model.eval(), points_modify)
+                    if_good_grasp, grasp_score_tmp = test_network(model.eval(), points_modify)  # 调用模型预测得分
                     predict.append(if_good_grasp.item())
                     grasp_score.append(grasp_score_tmp)
 
-                predict_vote = mode(predict)[0][0]  # vote from all the "repeat" results.
+                predict_vote = mode(predict)[0][0]  # vote from all the "repeat" results. mode函数用于找到出现次数最多的成员
                 grasp_score = np.array(grasp_score)
                 if args.model_type == "3class":  # the best in 3 class classification is the last column, third column
                     which_one_is_best = 2  # should set as 2
@@ -557,6 +608,7 @@ if __name__ == '__main__':
         # get the sorted score value, from high to low
         real_score_value = sorted(real_score_value, reverse=True)
 
+        # 显示抓取姿态
         marker_array = MarkerArray()
         marker_array_single = MarkerArray()
         grasp_msg_list = GraspConfigList()

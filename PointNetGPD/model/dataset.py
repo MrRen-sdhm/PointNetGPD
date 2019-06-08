@@ -563,7 +563,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         self.with_obj = with_obj
         self.min_point_limit = 50
 
-        # projection related
+        # projection related 投影相关参数
         self.projection = projection
         self.project_chann = project_chann
         if self.project_chann not in [3, 12]:
@@ -572,13 +572,13 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         if self.project_size != 60:
             raise NotImplementedError
         self.normal_K = 10
-        self.voxel_point_num  = 50
+        self.voxel_point_num = 50
         self.projection_margin = 1
         self.minimum_point_amount = 150
 
         self.transform = pickle.load(open(os.path.join(self.path, 'google2cloud.pkl'), 'rb'))
-        fl_grasp = glob.glob(os.path.join(path, 'ycb_grasp', self.tag, '*.npy'))
-        fl_pc = glob.glob(os.path.join(path, 'ycb_rgbd', '*', 'clouds', 'pc_NP3_NP5*.npy'))
+        fl_grasp = glob.glob(os.path.join(path, 'ycb_grasp', self.tag, '*.npy'))             # grasp pose file
+        fl_pc = glob.glob(os.path.join(path, 'ycb_rgbd', '*', 'clouds', 'pc_NP3_NP5*.npy'))  # point cloud file
 
         self.d_pc, self.d_grasp = {}, {}
         for i in fl_pc:
@@ -591,16 +591,24 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
             self.d_pc[k].sort()
 
         for i in fl_grasp:
-            k = i.split('/')[-1].split('.')[0]
+            grasp_fl_name = i.split('/')[-1].split('.')[0]  # grasp文件名
+            cnt = grasp_fl_name.split('_')[-1]  # grasp文件尾
+            head = grasp_fl_name.split('_')[0]  # grasp文件头
+            k = grasp_fl_name[len(head)+1:-(len(cnt)+1)]  # 标准物品名称
             self.d_grasp[k] = i
-        object1 = set(self.d_grasp.keys())
-        object2 = set(self.transform.keys())
-        self.object = list(object1.intersection(object2))
+
+        object1 = set(self.d_grasp.keys())    # objects to deal with
+        # print("object1", object1)
+        object2 = set(self.transform.keys())  # all ycb objects name
+        # print("object2", object2)
+        self.object = list(object1)
+        # self.object = list(object1.intersection(object2))  # 取交集
+        print("objects to deal with", self.object)
         self.amount = len(self.object) * self.grasp_amount_per_file
 
     def collect_pc(self, grasp, pc, transform):
         center = grasp[0:3]
-        axis = grasp[3:6] # binormal
+        axis = grasp[3:6]  # binormal 副法线
         width = grasp[6]
         angle = grasp[7]
 
@@ -609,7 +617,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         # cal approach
         cos_t = np.cos(angle)
         sin_t = np.sin(angle)
-        R1 = np.c_[[cos_t, 0, sin_t],[0, 1, 0],[-sin_t, 0, cos_t]]
+        R1 = np.c_[[cos_t, 0, sin_t], [0, 1, 0], [-sin_t, 0, cos_t]]
         axis_y = axis
         axis_x = np.array([axis_y[1], -axis_y[0], 0])
         if np.linalg.norm(axis_x) == 0:
@@ -793,6 +801,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         t = self.transform[obj_grasp][1]
 
         grasp_pc = self.collect_pc(grasp, pc, t)
+
         if grasp_pc is None:
             return None
         level_score, refine_score = grasp[-2:]
@@ -817,9 +826,11 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         if self.with_obj:
             return grasp_pc, label, obj_grasp
         else:
+            # print("grasp_pc", grasp_pc, grasp_pc.shape, label)  # (3, 750)
             return grasp_pc, label
 
     def __len__(self):
+        # print("self.amount", self.amount)
         return self.amount
 
 

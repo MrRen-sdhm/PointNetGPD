@@ -15,11 +15,13 @@ from torch.optim.lr_scheduler import StepLR
 from model.dataset import *
 from model.pointnet import PointNetCls, DualPointNetCls
 
+# torch.set_printoptions(threshold=np.inf)
+
 parser = argparse.ArgumentParser(description='pointnetGPD')
 parser.add_argument('--tag', type=str, default='default')
 parser.add_argument('--epoch', type=int, default=200)
 parser.add_argument('--mode', choices=['train', 'test'], required=True)
-parser.add_argument('--batch-size', type=int, default=1)
+parser.add_argument('--batch-size', type=int, default=16)
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--lr', type=float, default=0.005)
@@ -29,7 +31,7 @@ parser.add_argument('--model-path', type=str, default='./assets/learned_models',
                    help='pre-trained model path')
 parser.add_argument('--data-path', type=str, default='./data', help='data path')
 parser.add_argument('--log-interval', type=int, default=10)
-parser.add_argument('--save-interval', type=int, default=1)
+parser.add_argument('--save-interval', type=int, default=20)
 
 args = parser.parse_args()
 
@@ -41,33 +43,37 @@ if args.cuda:
 logger = SummaryWriter(os.path.join('./assets/log/', args.tag))
 np.random.seed(int(time.time()))
 
+
 def worker_init_fn(pid):
     np.random.seed(torch.initial_seed() % (2**31-1))
+
 
 def my_collate(batch):
     batch = list(filter(lambda x:x is not None, batch))
     return torch.utils.data.dataloader.default_collate(batch)
 
-grasp_points_num=750
-thresh_good=0.6
-thresh_bad=0.6
-point_channel=3
+
+grasp_points_num = 750
+thresh_good = 0.6
+thresh_bad = 0.6
+point_channel = 3
 
 train_loader = torch.utils.data.DataLoader(
     PointGraspOneViewDataset(
         grasp_points_num=grasp_points_num,
         path=args.data_path,
         tag='train',
-        grasp_amount_per_file=6500,
+        grasp_amount_per_file=50,  # 6500
         thresh_good=thresh_good,
         thresh_bad=thresh_bad,
     ),
     batch_size=args.batch_size,
-    num_workers=32,
+    num_workers=1,
     pin_memory=True,
     shuffle=True,
     worker_init_fn=worker_init_fn,
     collate_fn=my_collate,
+    drop_last=True,  # fix bug: ValueError: Expected more than 1 value per channel when training
 )
 
 test_loader = torch.utils.data.DataLoader(
@@ -75,7 +81,7 @@ test_loader = torch.utils.data.DataLoader(
         grasp_points_num=grasp_points_num,
         path=args.data_path,
         tag='test',
-        grasp_amount_per_file=500,
+        grasp_amount_per_file=20,  # 500
         thresh_good=thresh_good,
         thresh_bad=thresh_bad,
         with_obj=True,
@@ -86,6 +92,7 @@ test_loader = torch.utils.data.DataLoader(
     shuffle=True,
     worker_init_fn=worker_init_fn,
     collate_fn=my_collate,
+    drop_last=True,
 )
 
 is_resume = 0
@@ -116,11 +123,13 @@ def train(model, loader, epoch):
     correct = 0
     dataset_size = 0
     for batch_idx, (data, target) in enumerate(loader):
+        # print("data", data, data.shape, "target", target)
         dataset_size += data.shape[0]
         data, target = data.float(), target.long().squeeze()
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
+        # print("data", data, data.shape)
         output, _ = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
@@ -128,11 +137,10 @@ def train(model, loader, epoch):
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.view_as(pred)).long().cpu().sum()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\t{}'.format(
-            epoch, batch_idx * args.batch_size, len(loader.dataset),
-            100. * batch_idx * args.batch_size / len(loader.dataset), loss.item(), args.tag))
-            logger.add_scalar('train_loss', loss.cpu().item(),
-                    batch_idx + epoch * len(loader))
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\t{}'.format(epoch, batch_idx * args.batch_size,
+                        len(loader.dataset), 100. * batch_idx * args.batch_size / len(loader.dataset), loss.item(),
+                                                                               args.tag))
+            logger.add_scalar('train_loss', loss.cpu().item(), batch_idx + epoch * len(loader))
     return float(correct)/float(dataset_size)
 
 
@@ -150,7 +158,7 @@ def test(model, loader):
         data, target = data.float(), target.long().squeeze()
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        output, _ = model(data) # N*C
+        output, _ = model(data)  # N*C
         test_loss += F.nll_loss(output, target, size_average=False).cpu().item()
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.view_as(pred)).long().cpu().sum()
@@ -174,12 +182,15 @@ def main():
             logger.add_scalar('test_loss', loss, epoch)
             if epoch % args.save_interval == 0:
                 path = os.path.join(args.model_path, args.tag + '_{}.model'.format(epoch))
+                if not os.path.exists(args.model_path):
+                    os.mkdir(args.model_path)
                 torch.save(model, path)
                 print('Save model @ {}'.format(path))
     else:
         print('testing...')
         acc, loss = test(model, test_loader)
         print('Test done, acc={}, loss={}'.format(acc, loss))
+
 
 if __name__ == "__main__":
     main()

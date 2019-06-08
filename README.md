@@ -72,6 +72,7 @@ cd $HOME/code/
 ## Generate Grasp Dataset
 
 1. Download YCB object set from [YCB Dataset](http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/).
+
 2. Manage your dataset here:
     ```bash
     mkdir -p $HOME/dataset/ycb_meshes_google/objects
@@ -94,13 +95,18 @@ cd $HOME/code/
     └004_sugar_box
     ...
     ```
+
 3. Install SDFGen from [GitHub](https://github.com/jeffmahler/SDFGen.git):
     ```bash
     git clone https://github.com/jeffmahler/SDFGen.git
     cd SDFGen
     sudo sh install.sh
     ```
-3. Install python pcl library [python-pcl](https://github.com/strawlab/python-pcl):
+
+4. Install python pcl library [python-pcl](https://github.com/strawlab/python-pcl):
+
+    Tutorial：https://python-pcl-fork.readthedocs.io/en/rc_patches4/tutorial/index.html
+
     ```bash
     git clone https://github.com/strawlab/python-pcl.git
     pip install --upgrade pip
@@ -110,12 +116,14 @@ cd $HOME/code/
     python setup.py build_ext -i
     python setup.py develop
     ```
-4. Generate sdf file for each nontextured.obj file using SDFGen by running:
+
+5. Generate sdf file for each nontextured.obj file using SDFGen by running:
     ```bash
     cd $HOME/code/grasp-pointnet/dex-net/apps
     python read_file_sdf.py
     ```
-5. Generate dataset by running the code:
+
+6. Generate dataset by running the code:
     ```bash
     cd $HOME/code/grasp-pointnet/dex-net/apps
     python generate-dataset-canny.py [prefix]
@@ -123,6 +131,9 @@ cd $HOME/code/
     where ```[prefix]``` is the optional, it will add a prefix on the generated files.
 
 ## Visualization tools
+
+  mlab:https://docs.enthought.com/mayavi/mayavi/mlab.html
+
 - Visualization grasps
     ```bash
     cd $HOME/code/grasp-pointnet/dex-net/apps
@@ -169,12 +180,12 @@ This code will check the norm calculated by meshpy and pcl library.
 
     Launch a tensorboard for monitoring
     ```bash
-    tensorboard --log-dir ./assets/log --port 8080
+    tensorboard --logdir ./assets/log --port 8080
     ```
 
     and run an experiment for 200 epoch
     ```
-    python main_1v.py --epoch 200
+    python main_1v.py --mode train --epoch 200
     ```
 
     File name and corresponding experiment:

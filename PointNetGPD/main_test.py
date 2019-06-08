@@ -37,7 +37,7 @@ if args.cuda:
 np.random.seed(int(time.time()))
 
 grasp_points_num=1000
-point_channel=3
+point_channel = 3
 
 if args.model_type == "100":
     args.load_model = os.environ['HOME'] + '/code/grasp-pointnet/PointNetGPD/data/pointgpd_chann3_local.model'

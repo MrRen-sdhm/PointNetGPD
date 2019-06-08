@@ -41,7 +41,7 @@ except Exception:
           'http://openrave.org/docs/latest_stable/coreapihtml/installation_linux.html')
 
 from dexnet.grasping.grasp_sampler import GraspSampler, UniformGraspSampler, GaussianGraspSampler, \
-    AntipodalGraspSampler, GpgGraspSampler, PointGraspSampler, GpgGraspSamplerPcl
+    AntipodalGraspSampler, GpgGraspSampler, PointGraspSampler, GpgGraspSamplerPcl, GpgGraspSamplerPclPcd
 
 __all__ = ['Contact3D', 'GraspableObject', 'GraspableObject3D', 'ParallelJawPtGrasp3D',
            'Grasp', 'PointGrasp', 'RobotGripper', 'PointGraspMetrics3D',

@@ -71,14 +71,14 @@ def do_job(job_i):
 
 if __name__ == '__main__':
     home_dir = os.environ['HOME']
-    file_dir = home_dir + "/dataset/ycb_meshes_google/objects"
+    file_dir = home_dir + "/Projects/PointNetGPD/dataset/ycb_meshes_google/"  # for google ycb
     mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0.7, 0.7, 0.7))
     file_list_all = get_file_name(file_dir)
     object_numbers = file_list_all.__len__()
     i = 0  # index of objects to define which object to show
-    if os.path.exists(str(file_list_all[i]) + "/google_512k/nontextured.obj"):
-        of = ObjFile(str(file_list_all[i]) + "/google_512k/nontextured.obj")
-        sf = SdfFile(str(file_list_all[i]) + "/google_512k/nontextured.sdf")
+    if os.path.exists(str(file_list_all[i]) + "/nontextured.obj"):
+        of = ObjFile(str(file_list_all[i]) + "/nontextured.obj")
+        sf = SdfFile(str(file_list_all[i]) + "/nontextured.sdf")
 
     else:
         print("can't find any obj or sdf file!")
@@ -126,7 +126,7 @@ if __name__ == '__main__':
             sample_points = 500
             for _ in range(sample_points):
                 do_job(_)
-            mlab.pipeline.surface(mlab.pipeline.open(str(file_list_all[i]) + "/google_512k/nontextured.ply")
+            mlab.pipeline.surface(mlab.pipeline.open(str(file_list_all[i]) + "/nontextured.ply")
                                   , opacity=1)
             mlab.show()
             print(time.time() - begin_time)
@@ -150,5 +150,5 @@ if __name__ == '__main__':
                 show_grasp_norm(surface_points[ind], normal_tmp)
             else:
                 print(len(normal))
-        mlab.pipeline.surface(mlab.pipeline.open(str(file_list_all[i]) + "/google_512k/nontextured.ply"))
+        mlab.pipeline.surface(mlab.pipeline.open(str(file_list_all[i]) + "/nontextured.ply"))
         mlab.show()
