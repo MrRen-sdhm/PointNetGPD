@@ -1,3 +1,6 @@
+# 原始版本
+# 问题：在点云坐标系下处理, 获取手抓闭合区域内点云, 不够直观, 有一些误差存在
+
 import os
 import glob
 import pickle
@@ -646,7 +649,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
     def collect_pc(self, grasp, pc, transform, vis=False):
         """
         获取手抓闭合区域中的点云
-        :param grasp: 扫描仪获取的mesh坐标系下抓取姿态 (grasp_center, grasp_axis, grasp_angle, grasp_width, jaw_width)
+        :param grasp: 扫描仪获取的mesh坐标系下抓取姿态
         :param pc: 点云
         :param transform: 扫描仪mesh到点云的转换矩阵
         :param vis: 可视化选项
@@ -716,7 +719,17 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         right = (np.dot(transform, np.array([right[0], right[1], right[2], 1])))[:3]
         # bottom = (transform @ np.array([bottom[0], bottom[1], bottom[2], 1]))[:3]
 
-        # NOTE: m:mesh c:center p:point cloud
+        # 中心点转换到点云坐标系
+        center_r = (np.dot(transform, np.array([center[0], center[1], center[2], 1])))[:3]
+        # binormal转换到点云坐标系
+        binormal_r = (np.dot(transform, np.array([binormal[0], binormal[1], binormal[2], 1])))[:3].reshape(3, 1)
+        # approach转换到点云坐标系
+        approach_r = (np.dot(transform, np.array([approach[0], approach[1], approach[2], 1])))[:3].reshape(3, 1)
+        # minor_normal转换到点云坐标系
+        minor_normal_r = (np.dot(transform, np.array([minor_normal[0], minor_normal[1],
+                                                    minor_normal[2], 1])))[:3].reshape(3, 1)
+        # NOTE: m:mesh c:center p:point cloud 
+        matrix_m2p = np.hstack([approach_r, binormal_r, minor_normal_r]).T  # 旋转矩阵: 扫描仪坐标系->点云坐标系
         matrix_m2c = np.array([approach, binormal, minor_normal])  # 旋转矩阵: 扫描仪坐标系->中心点坐标系
         matrix_p2m = transform[:3, :3]  # 旋转矩阵: 点云坐标系->扫描仪坐标系
         
@@ -724,41 +737,24 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         trans_p2m = np.array([trans_p2m[0], trans_p2m[1], trans_p2m[2] + 0.02])  # 微调
 
         pc_p2m = np.dot(matrix_p2m.T, (pc - trans_p2m).T).T  # 配准到扫描仪坐标系下的点云
-        pc_m2c = (np.dot(matrix_m2c, (pc_p2m-center).T)).T  # 扫描仪坐标系下点云转换到中心点坐标系下
 
+        # NOTE:pc_p2c/left_t/right_t is in local coordinate(with center as origin) other(include pc) are in pc coordinate
+        pc_p2c = (np.dot(matrix_m2p, (pc-center_r).T)).T  # 点云坐标系下点云转换到中心点坐标系下
+        pc_m2c = (np.dot(matrix_m2c, (pc_p2m-center).T)).T  # 扫描仪坐标系下点云转换到中心点坐标系下
         left_t = (-width * np.array([0, 1, 0]) / 2).squeeze()
         right_t = (width * np.array([0, 1, 0]) / 2).squeeze()
 
-        # 获取手抓闭合区域中的点
-        x_limit = ags.gripper.hand_depth
-        z_limit = width/4
-        y_limit = width
-
-        x1 = pc_m2c[:, 0] > -x_limit
-        x2 = pc_m2c[:, 0] < 0
-        y1 = pc_m2c[:, 1] > -y_limit
-        y2 = pc_m2c[:, 1] < y_limit
-        z1 = pc_m2c[:, 2] > -z_limit
-        z2 = pc_m2c[:, 2] < z_limit
-
-        a = np.vstack([x1, x2, y1, y2, z1, z2])
-        self.in_ind = np.where(np.sum(a, axis=0) == len(a))[0]  # 手抓闭合区域中点的索引
-
-        print("[INFO] points num", len(self.in_ind))
-
-        if len(self.in_ind) < self.min_point_limit:
-            return None
-
-        vis = True
-        if vis:  # 显示手抓闭合区域内点云
+        vis = False
+        if vis:
             mlab.figure(bgcolor=(1, 1, 1), size=(1000, 800))
-            mlab.pipeline.surface(mlab.pipeline.open("/home/sdhm/Projects/PointNetGPD/PointNetGPD/data/"
-                                                     "ycb_meshes_google/003_cracker_box/google_512k/nontextured.ply"))
+
             # 世界坐标系
             show_line([0, 0, 0], [0.1, 0, 0], color='r', scale_factor=.0015)
             show_line([0, 0, 0], [0, 0.1, 0], color='g', scale_factor=.0015)
             show_line([0, 0, 0], [0, 0, 0.1], color='b', scale_factor=.0015)
 
+            mlab.pipeline.surface(mlab.pipeline.open("/home/sdhm/Projects/PointNetGPD/PointNetGPD/data/"
+                                                     "ycb_meshes_google/003_cracker_box/google_512k/nontextured.ply"))
             # show_points(pc, color='b', scale_factor=.002)  # 原始点云
             show_points(pc_p2m, color='g', scale_factor=.002)  # 配准到扫描仪坐标系下点云
             show_points(pc_m2c, color='b', scale_factor=.002)  # 手抓中心坐标系下点云
@@ -778,22 +774,68 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
             show_line(center, (center + approach * 0.05).reshape(3), color='r', scale_factor=.0015)
             show_line(center, (center + minor_normal * 0.05).reshape(3), color='b', scale_factor=.0015)
 
-            show_points(pc_m2c, color='c', scale_factor=.002)  # 手抓中心坐标系下点云
-            show_points(pc_m2c[self.in_ind], color='b', scale_factor=.002)  # 手抓闭合区域中的点云
+            mlab.show()
 
-            # 显示手抓闭合区域
-            # x = np.array([[-1, 1, 1, -1, -1], [-1, 1, 1, -1, -1]]) * x_limit
-            # y = np.array([[-1, -1, -1, -1, -1], [1, 1, 1, 1, 1]]) * y_limit
-            # z = np.array([[1, 1, -1, -1, 1], [1, 1, -1, -1, 1]]) * z_limit
-            # mlab.mesh(x, y, z, colormap="bone")
+        # 获取手抓闭合区域中的点
+        x_limit = width/4
+        z_limit = width/4
+        y_limit = width/2
+
+        x1 = pc_p2c[:, 0] > -x_limit
+        x2 = pc_p2c[:, 0] < x_limit
+        y1 = pc_p2c[:, 1] > -y_limit
+        y2 = pc_p2c[:, 1] < y_limit
+        z1 = pc_p2c[:, 2] > -z_limit
+        z2 = pc_p2c[:, 2] < z_limit
+
+        a = np.vstack([x1, x2, y1, y2, z1, z2])
+        self.in_ind = np.where(np.sum(a, axis=0) == len(a))[0]  # 手抓闭合区域中点的索引
+
+        print("[INFO] points num", len(self.in_ind))
+
+        if len(self.in_ind) < self.min_point_limit:
+            return None
+
+        vis = True
+        if vis:  # 显示手抓闭合区域内点云
+            mlab.figure(bgcolor=(1, 1, 1), size=(1000, 800))
+            mlab.pipeline.surface(mlab.pipeline.open("/home/sdhm/Projects/PointNetGPD/PointNetGPD/data/"
+                                                     "ycb_meshes_google/003_cracker_box/google_512k/nontextured.ply"))
+            # ---世界坐标系下---：
+            # 世界坐标系
+            show_line([0, 0, 0], [0.1, 0, 0], color='r', scale_factor=.0015)
+            show_line([0, 0, 0], [0, 0.1, 0], color='g', scale_factor=.0015)
+            show_line([0, 0, 0], [0, 0, 0.1], color='b', scale_factor=.0015)
+
+            show_points(pc, color='b', scale_factor=.002)  # 原始点云
+            show_points(center_r, color='r', scale_factor=.008)
+            # 显示手抓坐标系
+            show_line(center_r, (center_r + binormal_r.T[0] * 0.05).reshape(3), color='g', scale_factor=.0015)
+            show_line(center_r, (center_r + approach_r.T[0] * 0.05).reshape(3), color='r', scale_factor=.0015)
+            show_line(center_r, (center_r + minor_normal_r.T[0] * 0.05).reshape(3), color='b', scale_factor=.0015)
+            # 显示手抓
+            grasp_bottom_center = -ags.gripper.hand_depth * approach_r.T[0] + center_r
+            hand_points = ags.get_hand_points(grasp_bottom_center, approach_r.T[0], binormal_r.T[0])
+            ags.show_grasp_3d(hand_points, color=(0.4, 0.6, 0.0))
+
+            # ---手抓坐标系下---：
+            hand_points = (np.dot(matrix_m2p, (hand_points - center_r).T)).T  # 手抓关键点
+            ags.show_grasp_3d(hand_points, color=(0.5, 0.5, 0.5))  # 显示手抓
+            show_points(pc_p2c, color='c', scale_factor=.002)  # 手抓中心坐标系下点云
+            show_points(pc_p2c[self.in_ind], color='g', scale_factor=.002)  # 手抓闭合区域中的点云
+
+            x = np.array([[-1, 1, 1, -1, -1], [-1, 1, 1, -1, -1]]) * x_limit
+            y = np.array([[-1, -1, -1, -1, -1], [1, 1, 1, 1, 1]]) * y_limit
+            z = np.array([[1, 1, -1, -1, 1], [1, 1, -1, -1, 1]]) * z_limit
+            mlab.mesh(x, y, z, colormap="bone")
 
             mlab.title("cloud", size=0.3, color=(0, 0, 0))
             mlab.show()
 
         if self.projection:
-            return self.project_pc(pc_m2c, width)  # 返回投影后的点云
+            return self.project_pc(pc_p2c, width)  # 返回投影后的点云
         else:
-            return pc_m2c[self.in_ind]  # 返回手抓闭合区域中的点云
+            return pc_p2c[self.in_ind]  # 返回手抓闭合区域中的点云
 
     def check_square(self, point, points_g):
         dirs = np.array([[-1, 1, 1], [1, 1, 1], [-1, -1, 1], [1, -1, 1],

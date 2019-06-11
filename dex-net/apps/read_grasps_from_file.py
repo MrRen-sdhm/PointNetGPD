@@ -93,7 +93,7 @@ def open_pickle_and_obj(name_to_open_):
         suggestion = fuzzy_finder(new_sug, file_list_all)
         if len(suggestion) != 1:
             exit("Name error for obj file!")
-    object_name_ = suggestion[0][len(file_dir) + 1:]
+    object_name_ = suggestion[0][len(file_dir):-12]
     ply_name_ = suggestion[0] + "/nontextured.ply"
     if not check_pcd_grasp_points:
         of = ObjFile(suggestion[0] + "/nontextured.obj")
@@ -102,7 +102,7 @@ def open_pickle_and_obj(name_to_open_):
         sdf = sf.read()
         obj_ = GraspableObject3D(sdf, mesh)
     else:
-        cloud_path = home_dir + "/Projects/PointNetGPD/pointGPD/data/ycb_rgbd/" + object_name_ + "/clouds/"
+        cloud_path = home_dir + "/Projects/PointNetGPD/PointNetGPD/data/ycb_rgbd/" + object_name_ + "/clouds/"
         pcd_files = glob.glob(cloud_path + "*.pcd")
         obj_ = pcd_files
         obj_.sort()
@@ -129,7 +129,7 @@ def display_gripper_on_object(obj_, grasp_):
     stable_pose = t_obj_gripper
     grasp_ = grasp_.perpendicular_table(stable_pose)
 
-    Vis.figure(bgcolor=(1, 1, 1), size=(1000, 1000))
+    Vis.figure(bgcolor=(1, 1, 1), size=(500, 500))
     Vis.gripper_on_object(gripper, grasp_, obj_,
                           gripper_color=(0.25, 0.25, 0.25),
                           # stable_pose=stable_pose,  # .T_obj_world,
@@ -144,8 +144,10 @@ def display_grasps(grasps, graspable, color):
     major_pc = major_pc/np.linalg.norm(major_pc)
     minor_pc = np.cross(approach_normal, major_pc)
     center_point = grasps.center
+    print("grasps.center", grasps.center, grasps.center.shape)
     grasp_bottom_center = -ags.gripper.hand_depth * approach_normal + center_point
     hand_points = ags.get_hand_points(grasp_bottom_center, approach_normal, major_pc)
+    print("hand_points:", hand_points)
     local_hand_points = ags.get_hand_points(np.array([0, 0, 0]), np.array([1, 0, 0]), np.array([0, 1, 0]))
     if_collide = ags.check_collide(grasp_bottom_center, approach_normal,
                                    major_pc, minor_pc, graspable, local_hand_points)
@@ -160,14 +162,14 @@ def display_grasps(grasps, graspable, color):
 
 def show_selected_grasps_with_color(m, ply_name_, title, obj_):
     m_good = m[m[:, 1] <= 0.4]
-    m_good = m_good[np.random.choice(len(m_good), size=25, replace=True)]
+    m_good = m_good[np.random.choice(len(m_good), size=25, replace=True)]  # 随机选择25个显示
     m_bad = m[m[:, 1] >= 1.8]
-    m_bad = m_bad[np.random.choice(len(m_bad), size=25, replace=True)]
+    m_bad = m_bad[np.random.choice(len(m_bad), size=25, replace=True)]  # 随机选择25个显示
     collision_grasp_num = 0
 
     if save_fig or show_fig:
         # fig 1: good grasps
-        mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0.7, 0.7, 0.7), size=(1000, 1000))
+        mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0.7, 0.7, 0.7), size=(640, 640))
         mlab.pipeline.surface(mlab.pipeline.open(ply_name_))
         for a in m_good:
             # display_gripper_on_object(obj, a[0])  # real gripper
@@ -182,7 +184,7 @@ def show_selected_grasps_with_color(m, ply_name_, title, obj_):
             mlab.title(title, size=0.5)
 
         # fig 2: bad grasps
-        mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0.7, 0.7, 0.7), size=(1000, 1000))
+        mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0.7, 0.7, 0.7), size=(640, 640))
         mlab.pipeline.surface(mlab.pipeline.open(ply_name_))
 
         for a in m_bad:
@@ -252,34 +254,46 @@ if __name__ == '__main__':
             with_score = isinstance(grasps_with_score[0], tuple) or isinstance(grasps_with_score[0], list)
             if with_score:
                 grasps_with_score = np.array(grasps_with_score)
-                show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)
+                show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)  # 显示
 
     elif show_fig or save_fig or generate_new_file:  # show all objects in directory
         pickle_names = get_pickle_file_name(home_dir + "/Projects/PointNetGPD/dex-net/apps/generated_grasps")
         pickle_names.sort()
+        print("[INFO] pickle names:", pickle_names)
         for i in range(len(pickle_names)):
             grasps_with_score, obj, ply_name, obj_name = open_pickle_and_obj(pickle_names[i])
             assert (len(grasps_with_score) > 0)
             with_score = isinstance(grasps_with_score[0], tuple) or isinstance(grasps_with_score[0], list)
             if with_score:
                 grasps_with_score = np.array(grasps_with_score)
-                ind_good_grasp = show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)
+                ind_good_grasp = show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)  # 显示
                 if not (show_fig and save_fig) and generate_new_file:
                     good_grasp_with_score = grasps_with_score[ind_good_grasp]
                     old_npy = np.load(pickle_names[i][:-6]+"npy")
                     new_npy = old_npy[ind_good_grasp]
                     num = str(len(ind_good_grasp))
+                    print("[INFO] generate new file.")
+                    if not os.path.exists("./generated_grasps/new0704/0704_"+obj_name[:-11]):
+                        os.makedirs("./generated_grasps/new0704/0704_"+obj_name[:-11])
                     np.save("./generated_grasps/new0704/0704_"+obj_name+"_"+num+".npy", new_npy)
                     with open("./generated_grasps/new0704/0704_"+obj_name+"_"+num+".pickle", 'wb') as f:
                         pickle.dump(good_grasp_with_score, f)
+
     elif check_pcd_grasp_points:
+        print("[INFO] check pcd grasp points.")
         pickle_names = get_pickle_file_name(home_dir + "/Projects/PointNetGPD/dex-net/apps/generated_grasps/new0704")
         pickle_names.sort()
         for i in range(len(pickle_names)):
+            print(pickle_names[i])
             grasps_with_score, obj, ply_name, obj_name = open_pickle_and_obj(pickle_names[i])
             grasps_with_score = np.array(grasps_with_score)
             for j in range(len(obj)):
+                print(obj[j])
                 point_clouds_np = pcl.load(obj[j]).to_array()
                 has_points, ind_points = get_grasp_points_num(grasps_with_score, point_clouds_np)
+                print(has_points, ind_points)
                 np_name = "./generated_grasps/point_data/"+obj_name+"_"+obj[j].split("/")[-1][:-3]+"npy"
+                print("[INFO] Save:", np_name)
+                if not os.path.exists("./generated_grasps/point_data/"):
+                    os.makedirs("./generated_grasps/point_data/")
                 np.save(np_name, ind_points)

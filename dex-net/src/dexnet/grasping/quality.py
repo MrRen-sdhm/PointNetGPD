@@ -169,6 +169,7 @@ class PointGraspMetrics3D:
             ax.set_ylim3d(0, obj.sdf.dims_[1])
             ax.set_zlim3d(0, obj.sdf.dims_[2])
             plt.show()
+            plt.savefig("qual.png")
 
         # evaluate the desired quality metric
         quality_start = time.time()

@@ -20,7 +20,7 @@ HEREUNDER IS PROVIDED "AS IS". REGENTS HAS NO OBLIGATION TO PROVIDE
 MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 """
 """
-Contact class that encapsulates friction cone and surface window computation.
+Contact class that encapsulates friction cone and surface window computation. 封装摩擦锥和曲面窗口计算的接触类
 Authors: Brian Hou and Jeff Mahler
 """
 
@@ -627,7 +627,7 @@ class Contact3D(Contact):
         success, cone, in_normal = self.friction_cone()
 
         ax = plt.gca(projection='3d')
-        self.graspable.sdf.scatter()  # object
+        # self.graspable.sdf.scatter()  # object
         x, y, z = self.graspable.sdf.transform_pt_obj_to_grid(self.point)
         nx, ny, nz = self.graspable.sdf.transform_pt_obj_to_grid(in_normal, direction=True)
         ax.scatter([x], [y], [z], c=color, s=60)  # contact

@@ -132,7 +132,7 @@ cd $HOME/code/
 
 ## Visualization tools
 
-  mlab:https://docs.enthought.com/mayavi/mayavi/mlab.html
+  mlab: https://docs.enthought.com/mayavi/mayavi/mlab.html
 
 - Visualization grasps
     ```bash
@@ -185,10 +185,17 @@ This code will check the norm calculated by meshpy and pcl library.
 
     and run an experiment for 200 epoch
     ```
-    python main_1v.py --mode train --epoch 200
+    python main_1v.py --mode train --epoch 200 --cuda
+    ```
+
+    reload pretrained model
+
+    ```
+    python main_1v.py --mode train --epoch 200 --cuda --load-model default_120.model --load-epoch 120
     ```
 
     File name and corresponding experiment:
+
     ```
     main_1v.py        --- 1-viewed point cloud, 2 class
     main_1v_mc.py     --- 1-viewed point cloud, 3 class

@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(description='pointnetGPD')
 parser.add_argument('--tag', type=str, default='default')
 parser.add_argument('--epoch', type=int, default=200)
 parser.add_argument('--mode', choices=['train', 'test'], required=True)
-parser.add_argument('--batch-size', type=int, default=1)
+parser.add_argument('--batch-size', type=int, default=16)
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--lr', type=float, default=0.005)
@@ -29,7 +29,7 @@ parser.add_argument('--model-path', type=str, default='./assets/learned_models',
                    help='pre-trained model path')
 parser.add_argument('--data-path', type=str, default='./data', help='data path')
 parser.add_argument('--log-interval', type=int, default=10)
-parser.add_argument('--save-interval', type=int, default=1)
+parser.add_argument('--save-interval', type=int, default=10)
 
 args = parser.parse_args()
 
@@ -41,15 +41,18 @@ if args.cuda:
 logger = SummaryWriter(os.path.join('./assets/log/', args.tag))
 np.random.seed(int(time.time()))
 
+
 def worker_init_fn(pid):
     np.random.seed(torch.initial_seed() % (2**31-1))
+
 
 def my_collate(batch):
     batch = list(filter(lambda x:x is not None, batch))
     return torch.utils.data.dataloader.default_collate(batch)
 
-grasp_points_num=750
-point_channel=3
+
+grasp_points_num = 750
+point_channel = 3
 # FCs for dataset
 # fc_list_sub1 = np.arange(2.0, 0.75, -0.4)
 # fc_list_sub2 = np.arange(0.5, 0.36, -0.05)
@@ -64,7 +67,7 @@ train_loader = torch.utils.data.DataLoader(
         grasp_points_num=grasp_points_num,
         path=args.data_path,
         tag='train',
-        grasp_amount_per_file=6500,
+        grasp_amount_per_file=2100,  # 6500
         thresh_good=thresh_good,
         thresh_bad=thresh_bad,
     ),
@@ -74,6 +77,7 @@ train_loader = torch.utils.data.DataLoader(
     shuffle=True,
     worker_init_fn=worker_init_fn,
     collate_fn=my_collate,
+    drop_last=True,  # fix bug: ValueError: Expected more than 1 value per channel when training
 )
 
 test_loader = torch.utils.data.DataLoader(
@@ -92,8 +96,10 @@ test_loader = torch.utils.data.DataLoader(
     shuffle=True,
     worker_init_fn=worker_init_fn,
     collate_fn=my_collate,
+    drop_last=True,
 )
 
+# 载入模型
 is_resume = 0
 if args.load_model and args.load_epoch != -1:
     is_resume = 1
@@ -104,16 +110,19 @@ if is_resume or args.mode == 'test':
     print('load model {}'.format(args.load_model))
 else:
     model = PointNetCls(num_points=grasp_points_num, input_chann=point_channel, k=3)
+
 if args.cuda:
     if args.gpu != -1:
         torch.cuda.set_device(args.gpu)
         model = model.cuda()
     else:
-        device_id = [0,1,2,3]
+        device_id = [0, 1, 2, 3]
         torch.cuda.set_device(device_id[0])
         model = nn.DataParallel(model, device_ids=device_id).cuda()
+
 optimizer = optim.Adam(model.parameters(), lr=args.lr)
 scheduler = StepLR(optimizer, step_size=30, gamma=0.5)
+
 
 def train(model, loader, epoch):
     scheduler.step()
@@ -169,6 +178,9 @@ def test(model, loader):
 
 
 def main():
+    if not os.path.exists(args.model_path):
+        os.mkdir(args.model_path)
+
     if args.mode == 'train':
         for epoch in range(is_resume*args.load_epoch, args.epoch):
             acc_train = train(model, train_loader, epoch)
@@ -186,6 +198,7 @@ def main():
         print('testing...')
         acc, loss = test(model, test_loader)
         print('Test done, acc={}, loss={}'.format(acc, loss))
+
 
 if __name__ == "__main__":
     main()

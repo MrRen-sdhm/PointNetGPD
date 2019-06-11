@@ -196,7 +196,9 @@ class GraspSampler:
         while num_grasps_remaining > 0 and k <= max_iter:  # 循环采样直到有 target_num_grasps 个抓取姿态, 或超过循环次数
             # SAMPLING: generate more than we need
             num_grasps_generate = grasp_gen_mult * num_grasps_remaining
-            new_grasps = self.sample_grasps(graspable, num_grasps_generate, vis, **kwargs)
+            print("num_grasps_generate:", num_grasps_generate, "grasp_gen_mult:", grasp_gen_mult,
+                  "num_grasps_remaining:", num_grasps_remaining)
+            new_grasps = self.sample_grasps(graspable, num_grasps_generate, vis, **kwargs)  # 通过力闭合进行抓取姿态采样
 
             # COVERAGE REJECTION: prune grasps by distance 通过距离删减抓取姿态
             pruned_grasps = []
@@ -221,7 +223,7 @@ class GraspSampler:
                     for i in range(self.num_grasp_rots):
                         rotated_grasp = copy.copy(grasp)
                         delta_theta = 0  # add by Hongzhuo Liang
-                        print("This function can not use yes, as delta_theta is not set. --Hongzhuo Liang")
+                        print("This function can not use yet, as delta_theta is not set. --Hongzhuo Liang")
                         rotated_grasp.set_approach_angle(i * delta_theta)
                         candidate_grasps.append(rotated_grasp)
             else:
@@ -704,7 +706,7 @@ class AntipodalGraspSampler(GraspSampler):
         return alpha <= np.arctan(self.friction_coef), alpha
 
     def perturb_point(self, x, scale):
-        """ Uniform random perturbations to a point """
+        """ Uniform random perturbations to a point 均匀随机扰动"""
         x_samp = x + (scale / 2.0) * (np.random.rand(3) - 0.5)
         return x_samp
 
@@ -727,7 +729,7 @@ class AntipodalGraspSampler(GraspSampler):
         """
         print("[INFO] sample grasps antipodal.")
 
-        # get surface points
+        # get surface points 获取表面点
         grasps = []
         surface_points, _ = graspable.sdf.surface_points(grid_basis=False)
         np.random.shuffle(surface_points)
@@ -735,63 +737,77 @@ class AntipodalGraspSampler(GraspSampler):
         logger.info('Num surface: %d' % (len(surface_points)))
 
         print("shuffled surface points num:", len(shuffled_surface_points))
-        for k, x_surf in enumerate(shuffled_surface_points):
+        for k, x_surf in enumerate(shuffled_surface_points):  # 遍历各个采样点
             print("k:", k, "len(grasps):", len(grasps))
             start_time = time.clock()
 
             # perturb grasp for num samples 调整当前采样的抓取姿态
             for i in range(self.num_samples):
-                # perturb contact (TODO: sample in tangent plane to surface)
-                x1 = self.perturb_point(x_surf, graspable.sdf.resolution)
+                # perturb contact (TODO: sample in tangent plane to surface) 在与表面相切的平面上采样
+                x1 = self.perturb_point(x_surf, graspable.sdf.resolution)  # 给点添加随机扰动
 
-                # compute friction cone faces
-                c1 = Contact3D(graspable, x1, in_direction=None)
-                _, tx1, ty1 = c1.tangents()
-                cone_succeeded, cone1, n1 = c1.friction_cone(self.num_cone_faces, self.friction_coef)
+                # compute friction cone faces 计算摩擦锥面
+                c1 = Contact3D(graspable, x1, in_direction=None)  # 3D接触点
+                _, tx1, ty1 = c1.tangents()  # 计算表面法线和切线
+                cone_succeeded, cone1, n1 = c1.friction_cone(self.num_cone_faces, self.friction_coef)  # 计算摩擦锥
                 if not cone_succeeded:
                     continue
                 cone_time = time.clock()
 
                 # sample grasp axes from friction cone
-                v_samples = self.sample_from_cone(n1, tx1, ty1, num_samples=1)
+                v_samples = self.sample_from_cone(n1, tx1, ty1, num_samples=1)  # 在摩擦锥内均匀采样方向向量
                 sample_time = time.clock()
 
                 for v in v_samples:
                     if vis:
-                        x1_grid = graspable.sdf.transform_pt_obj_to_grid(x1)
-                        cone1_grid = graspable.sdf.transform_pt_obj_to_grid(cone1, direction=True)
+                        x1_grid = graspable.sdf.transform_pt_obj_to_grid(x1)  # 接触点 (3*1)
+                        cone1_grid = graspable.sdf.transform_pt_obj_to_grid(cone1, direction=False)  # 摩擦锥(3*8)
                         plt.clf()
                         plt.gcf()
-                        plt.ion()
-                        ax = plt.gca(projection=Axes3D)
+                        # plt.ion()  # 使用交互模式, 不支持多进程!
+                        ax = plt.gca(projection='3d')
                         for j in range(cone1.shape[1]):
+                            print(x1_grid[0] - cone1_grid[0])
+                            print(x1_grid[1] - cone1_grid[1])
+                            print("cone1_grid[0]", cone1_grid[0], cone1_grid[0].shape)
+                            print("cone1_grid[1]", cone1_grid[1], cone1_grid[1].shape)
+                            # ax.scatter(cone1_grid[0], cone1_grid[1], cone1_grid[2], s=50,  c='m')
+
                             ax.scatter(x1_grid[0] - cone1_grid[0], x1_grid[1] - cone1_grid[1],
                                        x1_grid[2] - cone1_grid[2], s=50, c='m')
+
 
                     # random axis flips since we don't have guarantees on surface normal directoins
                     if random.random() > 0.5:
                         v = -v
 
-                    # start searching for contacts
+                    # start searching for contacts 利用单个接触点生成平行夹抓的抓取姿态
                     grasp, c1, c2 = ParallelJawPtGrasp3D.grasp_from_contact_and_axis_on_grid(
                         graspable, x1, v, self.gripper.max_width,
-                        min_grasp_width_world=self.gripper.min_width, vis=vis)
+                        min_grasp_width_world=self.gripper.min_width, vis=False)
+                    
                     if grasp is None or c2 is None:
                         continue
 
-                    if 'random_approach_angle' in kwargs and kwargs['random_approach_angle']:
-                        angle_candidates = np.arange(-90, 120, 30)
+                    if 'random_approach_angle' in kwargs and kwargs['random_approach_angle']:  #NOTE:随机调整approach角度
+                        # print('[INFO] random approach angle')
+                        angle_candidates = np.arange(-90, 91, 30)  # [-90,90]
                         np.random.shuffle(angle_candidates)
                         for grasp_angle in angle_candidates:
                             grasp.approach_angle_ = grasp_angle
                             # get true contacts (previous is subject to variation)
                             success, c = grasp.close_fingers(graspable, vis=vis)
                             if not success:
+                                # print("not success:", grasp_angle)
                                 continue
+                            else:
+                                # print("success grasp angle:", grasp_angle)
+                                pass
                             break
                         else:
                             continue
                     else:
+                        print("angle:", grasp.approach_angle_)
                         success, c = grasp.close_fingers(graspable, vis=vis)
                         if not success:
                             continue
@@ -804,7 +820,7 @@ class AntipodalGraspSampler(GraspSampler):
                         continue
 
                     v_true = grasp.axis
-                    # compute friction cone for contact 2
+                    # compute friction cone for contact 2  # 计算第二接触点摩擦锥
                     cone_succeeded, cone2, n2 = c2.friction_cone(self.num_cone_faces, self.friction_coef)
                     if not cone_succeeded:
                         continue
@@ -814,13 +830,16 @@ class AntipodalGraspSampler(GraspSampler):
                         ax = plt.gca(projection='3d')
                         c1_proxy = c1.plot_friction_cone(color='m')
                         c2_proxy = c2.plot_friction_cone(color='y')
-                        ax.view_init(elev=5.0, azim=0)
+                        ax.view_init(elev=5.0, azim=30)
+                        print("show")
                         plt.show(block=False)
+                        # plt.savefig("filename.png")
+                        # exit("debug")
                         time.sleep(0.5)
                         plt.close()  # lol
 
                     # check friction cone
-                    if PointGraspMetrics3D.force_closure(c1, c2, self.friction_coef):
+                    if PointGraspMetrics3D.force_closure(c1, c2, self.friction_coef):  # 力闭合检查
                         grasps.append(grasp)
 
         # randomly sample max num grasps from total list

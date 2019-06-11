@@ -3,12 +3,12 @@ sklearn
 h5py
 numpy
 ipython<=5.5.0
-matplotlib<=2.2.0
+matplotlib==2.0.0
 NearPy
 Pillow
 python-dateutil
 PyYAML
-scikit-image
+scikit-image==0.11.3
 scikit-learn
 six
 trimesh
@@ -19,7 +19,7 @@ pandas
 visualization
 pyquaternion
 numba
-autolab-core
+autolab-core==0.0.4
 autolab-perception
 # torch>=0.4.1
 tensorboardX

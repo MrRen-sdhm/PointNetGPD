@@ -458,7 +458,7 @@ class ParallelJawPtGrasp3D(PointGrasp):
             plt.figure()
             plt.clf()
             h = plt.gcf()
-            plt.ion()
+            # plt.ion()
         # compute num samples to use based on sdf resolution
         grasp_width_grid = obj.sdf.transform_pt_obj_to_grid(self.max_grasp_width_)
         num_samples = int(Grasp.samples_per_grid * float(grasp_width_grid) / 2)  # at least 1 sample per grid
