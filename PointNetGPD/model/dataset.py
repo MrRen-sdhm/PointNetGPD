@@ -8,40 +8,16 @@ import torch.utils.data
 import torch.nn as nn
 import numpy as np
 
-try:
-    from mayavi import mlab
-except ImportError:
-    print("Can not import mayavi")
-    mlab = None
+# global configurations:
+from autolab_core import YamlConfig
+from dexnet.grasping import GpgGraspSampler
+from dexnet.grasping import RobotGripper
 
-def show_points(point, color='lb', scale_factor=.0005):
-    if color == 'b':
-        color_f = (0, 0, 1)
-    elif color == 'r':
-        color_f = (1, 0, 0)
-    elif color == 'g':
-        color_f = (0, 1, 0)
-    elif color == 'lb':  # light blue
-        color_f = (0.22, 1, 1)
-    else:
-        color_f = (1, 1, 1)
-    if point.size == 3:  # vis for only one point, shape must be (3,), for shape (1, 3) is not work
-        point = point.reshape(3, )
-        mlab.points3d(point[0], point[1], point[2], color=color_f, scale_factor=scale_factor)
-    else:  # vis for multiple points
-        mlab.points3d(point[:, 0], point[:, 1], point[:, 2], color=color_f, scale_factor=scale_factor)
-
-
-def show_line(un1, un2, color='g', scale_factor=0.0005):
-    if color == 'b':
-        color_f = (0, 0, 1)
-    elif color == 'r':
-        color_f = (1, 0, 0)
-    elif color == 'g':
-        color_f = (0, 1, 0)
-    else:
-        color_f = (1, 1, 1)
-    mlab.plot3d([un1[0], un2[0]], [un1[1], un2[1]], [un1[2], un2[2]], color=color_f, tube_radius=scale_factor)
+home_dir = os.environ['HOME']
+yaml_config = YamlConfig(home_dir + "/Projects/PointNetGPD/dex-net/test/config.yaml")
+gripper_name = 'robotiq_85'
+gripper = RobotGripper.load(gripper_name, home_dir + "/Projects/PointNetGPD/dex-net/data/grippers")
+ags = GpgGraspSampler(gripper, yaml_config)
 
 
 class PointGraspDataset(torch.utils.data.Dataset):
@@ -596,7 +572,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         self.thresh_good = thresh_good
         self.thresh_bad = thresh_bad
         self.with_obj = with_obj
-        self.min_point_limit = 50
+        self.min_point_limit = 150  # 最低点数限制
 
         # projection related 投影相关参数
         self.projection = projection
@@ -643,7 +619,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         print("objects to deal with", self.object)
         self.amount = len(self.object) * self.grasp_amount_per_file
 
-    def collect_pc(self, grasp, pc, transform, vis=False):
+    def collect_pc(self, grasp, pc, transform):
         """
         获取手抓闭合区域中的点云
         :param grasp: 扫描仪获取的mesh坐标系下抓取姿态 (grasp_center, grasp_axis, grasp_angle, grasp_width, jaw_width)
@@ -725,31 +701,31 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
 
         pc_p2m = np.dot(matrix_p2m.T, (pc - trans_p2m).T).T  # 配准到扫描仪坐标系下的点云
         pc_m2c = (np.dot(matrix_m2c, (pc_p2m-center).T)).T  # 扫描仪坐标系下点云转换到中心点坐标系下
+        # pc_c2m = (np.dot(matrix_m2c.T, pc_m2c.T)).T + center  # 中心点坐标系下点云转换到扫描仪坐标系下
 
         left_t = (-width * np.array([0, 1, 0]) / 2).squeeze()
         right_t = (width * np.array([0, 1, 0]) / 2).squeeze()
 
         # 获取手抓闭合区域中的点
         x_limit = ags.gripper.hand_depth
-        z_limit = width/4
+        z_limit = ags.gripper.hand_height
         y_limit = width
 
         x1 = pc_m2c[:, 0] > -x_limit
         x2 = pc_m2c[:, 0] < 0
-        y1 = pc_m2c[:, 1] > -y_limit
-        y2 = pc_m2c[:, 1] < y_limit
-        z1 = pc_m2c[:, 2] > -z_limit
-        z2 = pc_m2c[:, 2] < z_limit
+        y1 = pc_m2c[:, 1] > -y_limit/2
+        y2 = pc_m2c[:, 1] < y_limit/2
+        z1 = pc_m2c[:, 2] > -z_limit/2
+        z2 = pc_m2c[:, 2] < z_limit/2
 
         a = np.vstack([x1, x2, y1, y2, z1, z2])
         self.in_ind = np.where(np.sum(a, axis=0) == len(a))[0]  # 手抓闭合区域中点的索引
 
-        print("[INFO] points num", len(self.in_ind))
-
-        if len(self.in_ind) < self.min_point_limit:
+        if len(self.in_ind) < self.min_point_limit:  # 手抓闭合区域内点数太少
+            # print("\033[0;32m%s\033[0m" % "[INFO] points num", len(self.in_ind))
             return None
 
-        vis = True
+        vis = False
         if vis:  # 显示手抓闭合区域内点云
             mlab.figure(bgcolor=(1, 1, 1), size=(1000, 800))
             mlab.pipeline.surface(mlab.pipeline.open("/home/sdhm/Projects/PointNetGPD/PointNetGPD/data/"
@@ -762,6 +738,7 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
             # show_points(pc, color='b', scale_factor=.002)  # 原始点云
             show_points(pc_p2m, color='g', scale_factor=.002)  # 配准到扫描仪坐标系下点云
             show_points(pc_m2c, color='b', scale_factor=.002)  # 手抓中心坐标系下点云
+            # show_points(pc_c2m, color='r', scale_factor=.002)  # 手抓中心坐标系转换到扫描仪坐标系下点云
 
             # 显示扫描仪坐标系下手抓
             grasp_bottom_center = -ags.gripper.hand_depth * approach + center
@@ -779,13 +756,27 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
             show_line(center, (center + minor_normal * 0.05).reshape(3), color='b', scale_factor=.0015)
 
             show_points(pc_m2c, color='c', scale_factor=.002)  # 手抓中心坐标系下点云
-            show_points(pc_m2c[self.in_ind], color='b', scale_factor=.002)  # 手抓闭合区域中的点云
+            show_points(pc_m2c[self.in_ind], color='b', scale_factor=.002)  # 中心点坐标系下手抓闭合区域中的点云
+
+            pc_c2m_region = (np.dot(matrix_m2c.T, pc_m2c[self.in_ind].T)).T + center  # 扫描仪坐标系下手抓闭合区域中的点云
+            show_points(pc_c2m_region, color='r', scale_factor=.002)
 
             # 显示手抓闭合区域
-            # x = np.array([[-1, 1, 1, -1, -1], [-1, 1, 1, -1, -1]]) * x_limit
+            # x = (np.array([[-1, 1, 1, -1, -1], [-1, 1, 1, -1, -1]]) - 1) * x_limit/2
             # y = np.array([[-1, -1, -1, -1, -1], [1, 1, 1, 1, 1]]) * y_limit
             # z = np.array([[1, 1, -1, -1, 1], [1, 1, -1, -1, 1]]) * z_limit
-            # mlab.mesh(x, y, z, colormap="bone")
+            # mlab.mesh(x, y, z, color=(1, 0, 0), opacity=0.4)
+
+            # 体积为1的正方体的八个顶点
+            x_arr = np.array([-1, 1, 1, -1, -1, 1, 1, -1])/2
+            y_arr = np.array([-1, -1, 1, 1, -1, -1, 1, 1])/2
+            z_arr = np.array([-1, -1, -1, -1, 1, 1, 1, 1])/2
+            x = (x_arr - 0.5) * ags.gripper.hand_depth  # 平移半个单位
+            y = y_arr * (ags.gripper.hand_outer_diameter-2*ags.gripper.finger_width)
+            z = z_arr * ags.gripper.hand_height
+            triangles = [(0, 1, 2), (0, 2, 3), (4, 5, 6), (4, 6, 7), (1, 5, 6), (1, 2, 6),
+                         (0, 4, 7), (0, 3, 7), (2, 3, 6), (3, 6, 7), (0, 1, 5), (0, 4, 5)]
+            mlab.triangular_mesh(x, y, z, triangles, color=(1, 0, 1), opacity=0.2)
 
             mlab.title("cloud", size=0.3, color=(0, 0, 0))
             mlab.show()
@@ -940,21 +931,21 @@ class PointGraspOneViewDataset(torch.utils.data.Dataset):
         t = self.transform[obj_grasp][1]  # 获取扫描仪到点云的转换矩阵, 抓取姿态在扫描仪采集的mesh文件上获取, 须转换到
 
         # debug
-        level_score_, refine_score_ = grasp[-2:]
-        score_ = level_score_ + refine_score_ * 0.01
-        if score_ >= self.thresh_bad:
-            print("label: 0")
-        elif score_ <= self.thresh_good:
-            print("label: 1")
+        # level_score_, refine_score_ = grasp[-2:]
+        # score_ = level_score_ + refine_score_ * 0.01
+        # if score_ >= self.thresh_bad:
+        #     print("label: 0")
+        # elif score_ <= self.thresh_good:
+        #     print("label: 1")
 
-        if score_ <= self.thresh_good:
-            grasp_pc = self.collect_pc(grasp, pc, t)  # 获取手抓闭合区域中的点云
+        grasp_pc = self.collect_pc(grasp, pc, t)  # 获取手抓闭合区域中的点云
 
         if grasp_pc is None:
             return None
         level_score, refine_score = grasp[-2:]
 
         if not self.projection:
+            # 点数不够则有放回采样, 点数太多则随机采样
             if len(grasp_pc) > self.grasp_points_num:
                 grasp_pc = grasp_pc[np.random.choice(len(grasp_pc), size=self.grasp_points_num,
                                                      replace=False)].T
@@ -1251,17 +1242,50 @@ class PointGraspOneViewMultiClassDataset(torch.utils.data.Dataset):
 
 
 if __name__ == '__main__':
-    # global configurations:
-    from autolab_core import YamlConfig
-    from dexnet.visualization.visualizer3d import DexNetVisualizer3D as Vis
-    from dexnet.grasping import GpgGraspSampler
-    from dexnet.grasping import RobotGripper
+    try:
+        from mayavi import mlab
+    except ImportError:
+        print("Can not import mayavi")
+        mlab = None
 
-    home_dir = os.environ['HOME']
-    yaml_config = YamlConfig(home_dir + "/Projects/PointNetGPD/dex-net/test/config.yaml")
-    gripper_name = 'robotiq_85'
-    gripper = RobotGripper.load(gripper_name, home_dir + "/Projects/PointNetGPD/dex-net/data/grippers")
-    ags = GpgGraspSampler(gripper, yaml_config)
+
+    def worker_init_fn(pid):  # After creating the workers, each worker has an independent seed
+        np.random.seed(torch.initial_seed() % (2 ** 31 - 1))
+
+
+    def my_collate(batch):
+        batch = list(filter(lambda x: x is not None, batch))
+        return torch.utils.data.dataloader.default_collate(batch)
+
+
+    def show_points(point, color='lb', scale_factor=.0005):
+        if color == 'b':
+            color_f = (0, 0, 1)
+        elif color == 'r':
+            color_f = (1, 0, 0)
+        elif color == 'g':
+            color_f = (0, 1, 0)
+        elif color == 'lb':  # light blue
+            color_f = (0.22, 1, 1)
+        else:
+            color_f = (1, 1, 1)
+        if point.size == 3:  # vis for only one point, shape must be (3,), for shape (1, 3) is not work
+            point = point.reshape(3, )
+            mlab.points3d(point[0], point[1], point[2], color=color_f, scale_factor=scale_factor)
+        else:  # vis for multiple points
+            mlab.points3d(point[:, 0], point[:, 1], point[:, 2], color=color_f, scale_factor=scale_factor)
+
+
+    def show_line(un1, un2, color='g', scale_factor=0.0005):
+        if color == 'b':
+            color_f = (0, 0, 1)
+        elif color == 'r':
+            color_f = (1, 0, 0)
+        elif color == 'g':
+            color_f = (0, 1, 0)
+        else:
+            color_f = (1, 1, 1)
+        mlab.plot3d([un1[0], un2[0]], [un1[1], un2[1]], [un1[2], un2[2]], color=color_f, tube_radius=scale_factor)
 
     grasp_points_num = 1000
     obj_points_num = 50000
@@ -1295,12 +1319,38 @@ if __name__ == '__main__':
         thresh_bad=thresh_bad,
     )
 
+    cnt = 0
     for i in range(b.__len__()):
         try:
             grasp_pc, label = b.__getitem__(i)
+            cnt += 1
         except (RuntimeError, TypeError, NameError):
             print("[INFO] don't have valid points!")
         else:
             print("[INFO] get points success!")
             # print("grasp_pc:", grasp_pc[0], grasp_pc[0].shape, grasp_pc.shape, "\nlable:", label)
             # break
+            # pass
+    print("[INFO] have {} valid grasp in the dataset.".format(cnt))
+
+    # train_loader = torch.utils.data.DataLoader(
+    #     PointGraspOneViewDataset(
+    #         grasp_points_num=grasp_points_num,
+    #         path="../data",
+    #         tag='train',
+    #         grasp_amount_per_file=2100,  # 6500
+    #         thresh_good=thresh_good,
+    #         thresh_bad=thresh_bad,
+    #     ),
+    #     batch_size=64,
+    #     num_workers=32,
+    #     pin_memory=True,
+    #     shuffle=True,
+    #     worker_init_fn=worker_init_fn,
+    #     collate_fn=my_collate,
+    #     drop_last=True,  # fix bug: ValueError: Expected more than 1 value per channel when training
+    # )
+    #
+    # for batch_idx, (data, target) in enumerate(train_loader):
+    #     # print("data", data, data.shape, "target", target)
+    #     pass

@@ -346,6 +346,7 @@ class GraspSampler:
                      (14, 19, 18), (14, 18, 13), (3, 2, 13), (3, 13, 14), (3, 6, 7), (3, 6, 2),
                      (3, 14, 7), (14, 7, 16), (2, 13, 15), (2, 15, 6), (12, 20, 19), (12, 19, 16),
                      (15, 11, 17), (15, 17, 18), (6, 7, 8), (6, 8, 5)]
+        # mlab.points3d(hand_points[:, 0], hand_points[:, 1], hand_points[:, 2], color=(0, 0, 1), scale_factor=0.005)
         mlab.triangular_mesh(hand_points[:, 0], hand_points[:, 1], hand_points[:, 2],
                              triangles, color=color, opacity=0.5)
 

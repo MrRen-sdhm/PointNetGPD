@@ -52,8 +52,8 @@ def worker_init_fn(pid):  # After creating the workers, each worker has an indep
     np.random.seed(torch.initial_seed() % (2**31-1))
 
 
-def my_collate(batch):
-    batch = list(filter(lambda x: x is not None, batch))
+def my_collate(batch):  # 用于处理__getitem__返回值为None的情况, 选出不是None的返回值
+    batch = list(filter(lambda x: x is not None, batch))  # 移除每个batch中值为None的元素
     return torch.utils.data.dataloader.default_collate(batch)
 
 
@@ -85,7 +85,7 @@ test_loader = torch.utils.data.DataLoader(
         grasp_points_num=grasp_points_num,
         path=args.data_path,
         tag='test',
-        grasp_amount_per_file=500,  # 500
+        grasp_amount_per_file=2100,  # 500
         thresh_good=thresh_good,
         thresh_bad=thresh_bad,
         with_obj=True,
